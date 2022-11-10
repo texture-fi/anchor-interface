@@ -1,0 +1,13 @@
+[package]
+name = "anchor-interface"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+
+[dependencies]
+borsh = "0.9.3"
+
+[lib]
+crate-type = ["cdylib", "lib"]
