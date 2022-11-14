@@ -1,19 +1,25 @@
 use anchor_syn::codegen::program::common::{sighash, SIGHASH_GLOBAL_NAMESPACE};
-use anchor_syn::idl::{Idl, IdlAccountItem, IdlInstruction};
+use anchor_syn::idl::{IdlAccountItem, IdlInstruction};
 use heck::{ToSnakeCase, ToTitleCase, ToUpperCamelCase};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
 use crate::common::{docs_gen, item_gen, Field};
+use crate::Generator;
 
-pub fn gen(idl: &Idl) -> TokenStream {
-    let master_enum_name = item_gen(&format!("{}Instruction", idl.name.to_upper_camel_case()));
-    let ixs: Vec<_> = idl.instructions.iter().map(Instruction::new).collect();
-    let master_enum = master_enum_gen(&master_enum_name, &ixs);
-    let ix_builders = ix_builders_gen(&master_enum_name, &ixs);
-    quote! {
-        #master_enum
-        #ix_builders
+impl Generator {
+    pub fn gen_instructions(&self) -> TokenStream {
+        let master_enum_name = item_gen(&format!(
+            "{}Instruction",
+            self.idl.name.to_upper_camel_case()
+        ));
+        let ixs: Vec<_> = self.idl.instructions.iter().map(Instruction::new).collect();
+        let master_enum = master_enum_gen(&master_enum_name, &ixs);
+        let ix_builders = ix_builders_gen(&master_enum_name, &ixs);
+        quote! {
+            #master_enum
+            #ix_builders
+        }
     }
 }
 
@@ -39,11 +45,7 @@ impl<'a> Instruction<'a> {
             args: ix
                 .args
                 .iter()
-                .map(|arg| {
-                    Field::parse(arg).unwrap_or_else(|err| {
-                        panic!("Instruction {} arg {}: {}", &ix.name, &arg.name, err)
-                    })
-                })
+                .map(|arg| Field::parse(arg, &Default::default()))
                 .collect(),
             borsh_deser_ident,
         }
@@ -111,7 +113,7 @@ fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
                     buf: &mut &[u8],
                 ) -> ::core::result::Result<Self, ::borsh::maybestd::io::Error> {
                     Ok(Self ( #master_enum_name::#name {
-                        #(#args: borsh::BorshDeserialize::deserialize(buf)?,)*
+                        #(#args: ::borsh::BorshDeserialize::deserialize(buf)?,)*
                     }))
                 }
             }

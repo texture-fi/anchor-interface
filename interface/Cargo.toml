@@ -7,7 +7,6 @@ publish = false
 [features]
 
 [dependencies]
-borsh = "0.9.3"
 
 [lib]
 crate-type = ["cdylib", "lib"]

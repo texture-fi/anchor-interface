@@ -1,82 +1,69 @@
 use anchor_syn::codegen::program::common::sighash;
-use anchor_syn::idl::{Idl, IdlTypeDefinitionTy};
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::common::{docs_gen, item_gen, pub_fields_decl_gen};
+use crate::common::typedef_gen;
+use crate::Generator;
 
-pub fn gen(idl: &Idl) -> TokenStream {
-    let accounts = idl.accounts.iter().map(|acc| {
-        let docs = docs_gen(&acc.docs);
-        let name = item_gen(&acc.name);
-        let namespace = "account"; // TODO: add other namespaces support
-        let discriminator = sighash(namespace, &name.to_string());
-        let impl_discriminator = quote!(
-            impl anchor_interface::Account for #name {
-                fn discriminator() -> &'static [u8; 8] {
-                    &[#(#discriminator),*]
-                }
-            }
-        );
-        match &acc.ty {
-            IdlTypeDefinitionTy::Struct { fields } => {
-                let fields = pub_fields_decl_gen(fields, &acc.name);
-                quote! {
-                    #docs
-                    #[derive(
-                        Debug,
-                        Clone,
-                        borsh::BorshDeserialize,
-                        borsh::BorshSerialize,
-                    )]
-                    pub struct #name {
-                        #fields
+impl Generator {
+    pub fn gen_accounts(&self) -> TokenStream {
+        let accounts = self.idl.accounts.iter().map(|acc| {
+            let (typedef, name, opts) = typedef_gen(&self.idl.types, &self.struct_opts, acc);
+            let namespace = "account"; // TODO: add other namespaces support
+            let discriminator = sighash(namespace, &name.to_string());
+            let (serialize, deserialize) = if opts.zero_copy {
+                (
+                    quote!(writer.write_all(::bytemuck::bytes_of(self))),
+                    quote!(
+                        ::bytemuck::try_pod_read_unaligned(&data[8..]).map_err(|err| {
+                            ::std::io::Error::new(::std::io::ErrorKind::InvalidData, err)
+                        })
+                    ),
+                )
+            } else {
+                (
+                    quote!(::borsh::BorshSerialize::serialize(self, writer)),
+                    quote!(::borsh::BorshDeserialize::try_from_slice(&data[8..])),
+                )
+            };
+            let impl_serialize_and_deserialize = quote! {
+                impl ::anchor_interface::Account for #name {
+                    fn discriminator() -> &'static [u8; 8] {
+                        &[#(#discriminator),*]
                     }
-                    #impl_discriminator
                 }
+                impl ::anchor_interface::AccountSerialize for #name {
+                    fn try_serialize<W: std::io::Write>(&self, writer: &mut W)
+                        -> std::io::Result<()>
+                    {
+                        use ::anchor_interface::Account;
+                        writer.write_all(Self::discriminator())?;
+                        #serialize?;
+                        Ok(())
+                    }
+                }
+                impl ::anchor_interface::AccountDeserialize for #name {
+                    fn try_deserialize(data: &mut &[u8]) -> std::io::Result<Self> {
+                        use ::anchor_interface::Account;
+                        if data.len() < 8 || &data[..8] != Self::discriminator() {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "invalid discriminator",
+                            ));
+                        }
+                        let t = #deserialize?;
+                        Ok(t)
+                    }
+                }
+            };
+            quote! {
+                #typedef
+                #impl_serialize_and_deserialize
             }
-            IdlTypeDefinitionTy::Enum { variants: _ } => {
-                unimplemented!("enum accounts not supported yet")
-                // TODO: check and finish
-                // let variants = variants.iter().map(|var| {
-                //     let docs = docs_gen(&var.docs);
-                //     let name = format_ident!("{}", var.name);
-                //     let fields = match &var.fields {
-                //         Some(EnumFields::Named(fields)) => {
-                //             let fields = fields_gen(fields, false, &format!(
-                //                 "account {} variant {}",
-                //                 &acc.name, &var.name
-                //             ));
-                //             quote!({ #fields })
-                //         }
-                //         Some(EnumFields::Tuple(types)) => {
-                //             let types = types_gen(types, );
-                //             quote!(( #(#types),* ))
-                //         }
-                //         None => quote!(),
-                //     };
-                //     quote! {
-                //         #docs
-                //         #name #fields
-                //     }
-                // });
-                // quote! {
-                //     #docs
-                //     #[derive(
-                //         Debug,
-                //         borsh::BorshDeserialize,
-                //         borsh::BorshSerialize,
-                //     )]
-                //     pub enum #name {
-                //         #(#variants),*
-                //     }
-                //     #impl_discriminator
-                // }
-            }
+        });
+        quote! {
+            #(#accounts)*
         }
-    });
-    quote! {
-        #(#accounts)*
     }
 }
 
