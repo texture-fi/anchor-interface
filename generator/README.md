@@ -127,4 +127,14 @@ let mut transaction = Transaction::new_with_payer(
 
 The macros will generate account structs with implemented
 traits `AccountSerialize` and `AccountDeserialize` from [anchor-interface](../interface/) crate.
-Use them ;).
+Generated code will contains reexport this traits in root module. 
+
+For example, for some generated interface
+```
+use some_generated_interface::AccountDesirialize;
+use some_generated_interface::state::SomeAccount;
+
+...
+
+let acc = SomeAccount::try_deserialize(&mut acc_data)?;
+```

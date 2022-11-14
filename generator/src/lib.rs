@@ -2,7 +2,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, LitStr};
 
-use anchor_interface_syn::{accounts, errors, idl::Idl, instructions, load_idl, macros};
+use anchor_interface_syn::{accounts, errors, exports, idl::Idl, instructions, load_idl, macros};
 
 fn mod_gen<G>(idl: &Idl, name: &Ident, gen: G) -> TokenStream
 where
@@ -28,6 +28,7 @@ pub fn program(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     };
 
     let macros = macros::gen(&idl);
+    let exports = exports::gen(&idl);
 
     let instruction_mod = mod_gen(&idl, &format_ident!("instruction"), instructions::gen);
     let state_mod = mod_gen(&idl, &format_ident!("state"), accounts::gen);
@@ -35,6 +36,7 @@ pub fn program(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     quote! {
         #macros
+        #exports
         #instruction_mod
         #state_mod
         #error_mod

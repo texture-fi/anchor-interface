@@ -10,6 +10,7 @@ pub mod macros;
 
 pub mod accounts;
 pub mod errors;
+pub mod exports;
 pub mod instructions;
 
 pub fn load_idl<P: AsRef<Path>>(path: P) -> idl::Idl {

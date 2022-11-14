@@ -1,7 +1,7 @@
 use anchor_syn::idl::Idl;
 use heck::{ToTitleCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
-use quote::{quote, format_ident};
+use quote::{format_ident, quote};
 
 use crate::common::item_gen;
 
