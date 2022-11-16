@@ -17,7 +17,7 @@ pub mod accounts;
 pub mod errors;
 pub mod exports;
 pub mod instructions;
-pub mod types;
+pub mod typedefs;
 
 #[derive(Default, FromMeta)]
 pub struct GeneratorOptions {
