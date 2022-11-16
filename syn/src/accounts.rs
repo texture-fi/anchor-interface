@@ -2,7 +2,7 @@ use anchor_syn::codegen::program::common::sighash;
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::common::typedef_gen;
+use crate::typedefs::typedef_gen;
 use crate::Generator;
 
 impl Generator {
