@@ -74,6 +74,7 @@ pub fn typedef_gen(
             quote! {
                 #docs
                 #[derive(#(#derive),*)]
+                #derive_debug
                 #attributes
                 pub enum #name {
                     #(#variants),*

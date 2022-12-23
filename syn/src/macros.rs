@@ -19,6 +19,7 @@ impl Generator {
                     )
                 }
             }
+            pub(crate) use gen_crate_docs;
         }
     }
 }

@@ -1,5 +1,5 @@
 use anchor_syn::codegen::program::common::{sighash, SIGHASH_GLOBAL_NAMESPACE};
-use anchor_syn::idl::{IdlAccountItem, IdlInstruction};
+use anchor_syn::idl::{IdlAccount, IdlAccountItem, IdlInstruction};
 use heck::{ToSnakeCase, ToTitleCase, ToUpperCamelCase};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
@@ -110,10 +110,10 @@ fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
             struct #helper_name ( #master_enum_name );
             impl ::borsh::de::BorshDeserialize for #helper_name {
                 fn deserialize(
-                    buf: &mut &[u8],
+                    _buf: &mut &[u8],
                 ) -> ::core::result::Result<Self, ::borsh::maybestd::io::Error> {
                     Ok(Self ( #master_enum_name::#name {
-                        #(#args: ::borsh::BorshDeserialize::deserialize(buf)?,)*
+                        #(#args: ::borsh::BorshDeserialize::deserialize(_buf)?,)*
                     }))
                 }
             }
@@ -186,32 +186,45 @@ fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
     }
 }
 
+fn acc_docs(acc: &IdlAccount, idx: &mut usize) -> String {
+    let out = format!(
+        " {}. `[{}{}{}]` {}",
+        idx,
+        if acc.is_signer { "signer" } else { "" },
+        if acc.is_signer && acc.is_mut {
+            ", "
+        } else {
+            ""
+        },
+        if acc.is_mut { "writable" } else { "" },
+        acc.name.to_title_case().to_lowercase(),
+    );
+    *idx += 1;
+    out
+}
+fn acc_item_docs(acc: &IdlAccountItem, idx: &mut usize) -> Vec<String> {
+    let mut out = Vec::new();
+    match acc {
+        IdlAccountItem::IdlAccount(acc) => {
+            out.push(acc_docs(acc, idx));
+        }
+        IdlAccountItem::IdlAccounts(accs) => {
+            accs.accounts.iter().for_each(|acc| {
+                out.extend(acc_item_docs(acc, idx));
+            });
+        }
+    }
+    out
+}
 fn acc_docs_gen(accounts: &[IdlAccountItem]) -> TokenStream {
     if accounts.is_empty() {
         return quote!();
     }
 
     let mut idx = 0;
-    let docs = accounts.iter().map(|acc| match acc {
-        IdlAccountItem::IdlAccount(acc) => {
-            let out = format!(
-                " {}. `[{}{}{}]` {}",
-                idx,
-                if acc.is_signer { "signer" } else { "" },
-                if acc.is_signer && acc.is_mut {
-                    ", "
-                } else {
-                    ""
-                },
-                if acc.is_mut { "writable" } else { "" },
-                acc.name.to_title_case().to_lowercase(),
-            );
-            idx += 1;
-            out
-        }
-        IdlAccountItem::IdlAccounts(_accs) => {
-            todo!("multiple accounts not supported yet")
-        }
+    let mut docs = Vec::new();
+    accounts.iter().for_each(|acc| {
+        docs.extend(acc_item_docs(acc, &mut idx));
     });
     quote! {
         #[doc = " Accounts expected by this instruction:"]
@@ -219,27 +232,63 @@ fn acc_docs_gen(accounts: &[IdlAccountItem]) -> TokenStream {
     }
 }
 
+fn acc_name(acc: &IdlAccount) -> TokenStream {
+    let name = format_ident!("{}", acc.name.to_snake_case());
+    quote!(#name)
+}
+fn acc_item_name(acc: &IdlAccountItem) -> Vec<TokenStream> {
+    let mut out = Vec::new();
+    match acc {
+        IdlAccountItem::IdlAccount(acc) => out.push(acc_name(acc)),
+        IdlAccountItem::IdlAccounts(accs) => {
+            accs.accounts
+                .iter()
+                .for_each(|acc| out.extend(acc_item_name(acc)));
+        }
+    }
+    out
+}
+
+fn acc_meta(acc: &IdlAccount) -> TokenStream {
+    let name = format_ident!("{}", acc.name.to_snake_case());
+    let is_signer = acc.is_signer;
+    let new = format_ident!("{}", if acc.is_mut { "new" } else { "new_readonly" });
+    quote!(AccountMeta::#new(#name, #is_signer))
+}
+fn acc_item_meta(acc: &IdlAccountItem) -> Vec<TokenStream> {
+    let mut out = Vec::new();
+    match acc {
+        IdlAccountItem::IdlAccount(acc) => out.push(acc_meta(acc)),
+        IdlAccountItem::IdlAccounts(accs) => {
+            accs.accounts
+                .iter()
+                .for_each(|acc| out.extend(acc_item_meta(acc)));
+        }
+    }
+    out
+}
+
 fn ix_builders_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenStream {
     ixs.iter()
         .map(|ix| {
             let name = &ix.ident;
-            let accounts = ix.idl.accounts.iter().map(|acc| match acc {
-                IdlAccountItem::IdlAccount(acc) => {
-                    let name = format_ident!("{}", acc.name.to_snake_case());
-                    quote!(#name)
-                }
-                IdlAccountItem::IdlAccounts(_) => todo!("multiple accounts not supported yet"),
-            });
+            let accounts = {
+                let mut out = Vec::new();
+                ix.idl
+                    .accounts
+                    .iter()
+                    .for_each(|acc| out.extend(acc_item_name(acc)));
+                out
+            };
             let accounts_decl = accounts.clone();
-            let account_metas = ix.idl.accounts.iter().map(|acc| match acc {
-                IdlAccountItem::IdlAccount(acc) => {
-                    let name = format_ident!("{}", acc.name.to_snake_case());
-                    let is_signer = acc.is_signer;
-                    let new = format_ident!("{}", if acc.is_mut { "new" } else { "new_readonly" });
-                    quote!(AccountMeta::#new(#name, #is_signer))
-                }
-                IdlAccountItem::IdlAccounts(_) => todo!("multiple accounts not supported yet"),
-            });
+            let account_metas = {
+                let mut out = Vec::new();
+                ix.idl
+                    .accounts
+                    .iter()
+                    .for_each(|acc| out.extend(acc_item_meta(acc)));
+                out
+            };
             let params_decl = ix.args.iter().map(Field::pub_decl_gen);
             let params = ix.args.iter().map(|arg| &arg.ident);
             let ix_args = params.clone();
