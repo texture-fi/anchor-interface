@@ -9,6 +9,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
 pub use anchor_syn::idl;
+use rust_format::{Formatter, RustFmt};
 
 pub mod common;
 pub mod macros;
@@ -23,6 +24,9 @@ pub mod typedefs;
 pub struct GeneratorOptions {
     /// Path to the IDL.
     pub idl: String,
+    /// Path to out rust-file
+    pub out_file: Option<String>,
+
     /// List of zero copy structs.
     pub zero_copy: Option<PathList>,
     /// List of `repr(packed)` structs.
@@ -37,6 +41,7 @@ pub struct StructOpts {
 
 pub struct Generator {
     pub idl: idl::Idl,
+    pub out_file: Option<String>,
     pub struct_opts: BTreeMap<Ident, StructOpts>,
 }
 
@@ -62,7 +67,11 @@ impl From<&GeneratorOptions> for Generator {
             );
         });
 
-        Generator { idl, struct_opts }
+        Generator {
+            idl,
+            out_file: opt.out_file.clone(),
+            struct_opts,
+        }
     }
 }
 
@@ -77,13 +86,24 @@ impl Generator {
         let state_mod = self.mod_gen(&format_ident!("state"), Self::gen_accounts, true);
         let error_mod = self.mod_gen(&format_ident!("error"), Self::gen_errors, true);
 
-        quote! {
+        let stream = quote! {
             #macros
             #exports
             #instruction_mod
             #types
             #state_mod
             #error_mod
+        };
+
+        if let Some(out) = &self.out_file {
+            fs::write(
+                format!("{}/{}", std::env::var("CARGO_MANIFEST_DIR").unwrap(), out),
+                RustFmt::default().format_str(stream.to_string()).unwrap(),
+            )
+            .unwrap();
+            quote!()
+        } else {
+            stream
         }
     }
 

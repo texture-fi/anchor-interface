@@ -146,7 +146,7 @@ pub fn get_type_properties(defs: &[IdlTypeDefinition], ty: &IdlType) -> FieldLis
                     get_field_list_properties(defs, fields)
                 }
                 anchor_syn::idl::IdlTypeDefinitionTy::Enum { variants } => {
-                    get_variant_list_properties(defs, variants)
+                    get_variant_list_properties(defs, variants).whitout_default()
                 }
             }
         }

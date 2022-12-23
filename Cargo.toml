@@ -4,4 +4,6 @@ members = [
 
 	"generator",
 	"syn",
+
+	"examples/*"
 ]
