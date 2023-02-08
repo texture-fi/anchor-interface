@@ -49,7 +49,7 @@ impl From<&GeneratorOptions> for Generator {
     fn from(opt: &GeneratorOptions) -> Self {
         let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
         let path = PathBuf::from(cargo_manifest_dir).join(&opt.idl);
-        let idl_contents = fs::read_to_string(&path).unwrap();
+        let idl_contents = fs::read_to_string(path).unwrap();
         let idl: anchor_syn::idl::Idl = serde_json::from_str(&idl_contents).unwrap();
 
         let zero_copy = pathlist_to_idents(opt.zero_copy.as_ref());
@@ -120,7 +120,7 @@ impl Generator {
             } else {
                 quote! {
                     #[allow(unused_imports)]
-                    use crate::types::*;
+                    use super::types::*;
                 }
             };
             quote! {
@@ -141,6 +141,6 @@ fn pathlist_to_idents(list: Option<&PathList>) -> HashSet<&Ident> {
 pub fn load_idl<P: AsRef<Path>>(path: P) -> idl::Idl {
     let path =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR")).join(path);
-    let idl = fs::read_to_string(&path).expect("IDL path");
+    let idl = fs::read_to_string(path).expect("IDL path");
     serde_json::from_str(&idl).expect("IDL data")
 }
