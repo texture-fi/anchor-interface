@@ -15,10 +15,10 @@ impl Generator {
         ));
         let ixs: Vec<_> = self.idl.instructions.iter().map(Instruction::new).collect();
         let master_enum = master_enum_gen(&master_enum_name, &ixs);
-        let ix_builders = ix_builders_gen(&master_enum_name, &ixs);
+        let ix_builders_and_parsers = ix_builders_and_parsers_gen(&master_enum_name, &ixs);
         quote! {
             #master_enum
-            #ix_builders
+            #ix_builders_and_parsers
         }
     }
 }
@@ -268,7 +268,7 @@ fn acc_item_meta(acc: &IdlAccountItem) -> Vec<TokenStream> {
     out
 }
 
-fn ix_builders_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenStream {
+fn ix_builders_and_parsers_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenStream {
     ixs.iter()
         .map(|ix| {
             let name = &ix.ident;
@@ -292,6 +292,9 @@ fn ix_builders_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
             let params_decl = ix.args.iter().map(Field::pub_decl_gen);
             let params = ix.args.iter().map(|arg| &arg.ident);
             let ix_args = params.clone();
+            let account_idxs_name = format_ident!("{}AccountIndexes", name);
+            let try_acc_idx = accounts.clone();
+            let try_acc_idx_idx = 0..accounts.len();
             quote! {
                 #[derive(Debug)]
                 pub struct #name {
@@ -332,6 +335,27 @@ fn ix_builders_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
                             data,
                             accounts,
                         }
+                    }
+                }
+
+                #[derive(Debug)]
+                pub struct #account_idxs_name {
+                    #(pub #accounts_decl: usize,)*
+                    pub trailing_accounts: Vec<usize>,
+                }
+                impl<'a> TryFrom<&'a [u8]> for #account_idxs_name {
+                    type Error = ::anchor_interface::errors::TryAccountIndexesError;
+                    fn try_from(indexes: &'a [u8]) -> Result<Self, Self::Error> {
+                        let mut iter = indexes.iter().map(|idx| (*idx) as usize);
+                        Ok(Self {
+                            #(
+                                #try_acc_idx: iter.next()
+                                    .ok_or(::anchor_interface::errors::TryAccountIndexesError
+                                        ::GetIndex(stringify!(#try_acc_idx), #try_acc_idx_idx)
+                                    )?,
+                            )*
+                            trailing_accounts: iter.collect(),
+                        })
                     }
                 }
             }
