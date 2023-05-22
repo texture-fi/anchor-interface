@@ -219,8 +219,18 @@ pub fn types_gen(types: &[IdlType], opts: &StructOpts) -> TokenStream {
     quote!(#(#types),*)
 }
 
+pub fn field_attrs(ty: &IdlType, opts: &StructOpts) -> TokenStream {
+    match (opts.zero_copy, ty) {
+        (false, IdlType::Array(item, size)) => {
+            quote!()
+        }
+        _ => quote!()
+    }
+}
+
 pub struct Field {
     pub docs: TokenStream,
+    pub attrs: TokenStream,
     pub ident: Ident,
     pub ty: TokenStream,
 }
@@ -228,22 +238,25 @@ impl Field {
     pub fn parse(field: &IdlField, opts: &StructOpts) -> Self {
         Field {
             docs: docs_gen(&field.docs),
+            attrs: ,
             ident: format_ident!("{}", field.name.to_snake_case()),
             ty: type_gen(&field.ty, opts),
         }
     }
 
     pub fn decl_gen(&self) -> TokenStream {
-        let Self { docs, ident, ty } = self;
+        let Self { docs, attrs, ident, ty } = self;
         quote! {
             #docs
+            #attrs
             #ident: #ty
         }
     }
     pub fn pub_decl_gen(&self) -> TokenStream {
-        let Self { docs, ident, ty } = self;
+        let Self { docs, attrs, ident, ty } = self;
         quote! {
             #docs
+            #attrs
             pub #ident: #ty
         }
     }
