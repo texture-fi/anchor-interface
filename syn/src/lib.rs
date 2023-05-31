@@ -41,15 +41,16 @@ pub struct StructOpts {
 
 pub struct Generator {
     pub idl: idl::Idl,
-    pub out_file: Option<String>,
+    pub out_file: Option<PathBuf>,
     pub struct_opts: BTreeMap<Ident, StructOpts>,
 }
 
 impl From<&GeneratorOptions> for Generator {
     fn from(opt: &GeneratorOptions) -> Self {
         let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-        let path = PathBuf::from(cargo_manifest_dir).join(&opt.idl);
-        let idl_contents = fs::read_to_string(path).unwrap();
+
+        let idl_path = PathBuf::from(cargo_manifest_dir.clone()).join(&opt.idl);
+        let idl_contents = fs::read_to_string(idl_path).unwrap();
         let idl: anchor_syn::idl::Idl = serde_json::from_str(&idl_contents).unwrap();
 
         let zero_copy = pathlist_to_idents(opt.zero_copy.as_ref());
@@ -67,9 +68,14 @@ impl From<&GeneratorOptions> for Generator {
             );
         });
 
+        let out_file = opt
+            .out_file
+            .as_ref()
+            .map(|file| PathBuf::from(cargo_manifest_dir).join(file));
+
         Generator {
             idl,
-            out_file: opt.out_file.clone(),
+            out_file,
             struct_opts,
         }
     }
@@ -97,7 +103,7 @@ impl Generator {
 
         if let Some(out) = &self.out_file {
             fs::write(
-                format!("{}/{}", std::env::var("CARGO_MANIFEST_DIR").unwrap(), out),
+                out,
                 RustFmt::default().format_str(stream.to_string()).unwrap(),
             )
             .unwrap();
