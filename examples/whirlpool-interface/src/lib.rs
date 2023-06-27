@@ -8,14 +8,7 @@ anchor_interface_gen::program!(
     packed(TickArray, Tick)
 );
 
-// Or we can generate rust-file and then include or import that (easier to debug)
-#[cfg(feature = "gen-file")]
-anchor_interface_gen::program!(
-    idl = "whirlpool.json",
-    zero_copy(TickArray, Tick),
-    packed(TickArray, Tick),
-    out_file = "src/_gen_.rs"
-);
+// Or we can generate rust-file from build script and then include or import that (easier to debug)
 #[cfg(feature = "gen-file")]
 mod _gen_;
 #[cfg(feature = "gen-file")]

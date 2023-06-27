@@ -27,5 +27,8 @@ solana-program-test = "1.10"
 solana-sdk = "1.10"
 tokio = "1"
 
+[build-dependencies]
+anchor-interface-syn = { path = "../../syn" }
+
 [lib]
 crate-type = ["cdylib", "lib"]
