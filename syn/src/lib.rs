@@ -7,6 +7,7 @@ use std::{
 use darling::{util::PathList, FromMeta};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
+use typed_builder::TypedBuilder;
 
 pub use anchor_syn::idl;
 use rust_format::{Formatter, RustFmt};
@@ -20,17 +21,42 @@ pub mod exports;
 pub mod instructions;
 pub mod typedefs;
 
-#[derive(Default, FromMeta)]
+#[derive(Default, FromMeta, TypedBuilder)]
 pub struct GeneratorOptions {
     /// Path to the IDL.
+    #[builder(setter(into))]
     pub idl: String,
-    /// Path to out rust-file
-    pub out_file: Option<String>,
 
     /// List of zero copy structs.
+    #[builder(default, setter(transform = |list: &[&str]| {
+        Some(parse_path_list(list))
+    }))]
     pub zero_copy: Option<PathList>,
     /// List of `repr(packed)` structs.
+    #[builder(default, setter(transform = |list: &[&str]| {
+        Some(parse_path_list(list))
+    }))]
     pub packed: Option<PathList>,
+}
+
+pub fn parse_path_list(list: &[&str]) -> PathList {
+    let list: Vec<syn::Path> = list
+        .iter()
+        .map(|&path| {
+            let leading_colon = path
+                .starts_with("..")
+                .then_some(<syn::Token![::]>::default());
+            let idents = path
+                .split("::")
+                .map(|ident| syn::PathSegment::from(format_ident!("{}", ident)));
+
+            syn::Path {
+                leading_colon,
+                segments: syn::punctuated::Punctuated::from_iter(idents),
+            }
+        })
+        .collect();
+    PathList::new(list)
 }
 
 #[derive(Clone, Copy, Default)]
@@ -40,8 +66,9 @@ pub struct StructOpts {
 }
 
 pub struct Generator {
+    pub cargo_manifest_dir: String,
+    pub idl_file: String,
     pub idl: idl::Idl,
-    pub out_file: Option<PathBuf>,
     pub struct_opts: BTreeMap<Ident, StructOpts>,
 }
 
@@ -68,21 +95,17 @@ impl From<&GeneratorOptions> for Generator {
             );
         });
 
-        let out_file = opt
-            .out_file
-            .as_ref()
-            .map(|file| PathBuf::from(cargo_manifest_dir).join(file));
-
         Generator {
+            cargo_manifest_dir,
+            idl_file: opt.idl.clone(),
             idl,
-            out_file,
             struct_opts,
         }
     }
 }
 
 impl Generator {
-    pub fn gen_program(&self) -> TokenStream {
+    pub fn gen_program_stream(&self) -> TokenStream {
         let macros = self.gen_macros();
         let exports = self.gen_exports();
 
@@ -92,25 +115,35 @@ impl Generator {
         let state_mod = self.mod_gen(&format_ident!("state"), Self::gen_accounts, true);
         let error_mod = self.mod_gen(&format_ident!("error"), Self::gen_errors, true);
 
-        let stream = quote! {
+        quote! {
             #macros
             #exports
             #instruction_mod
             #types
             #state_mod
             #error_mod
-        };
-
-        if let Some(out) = &self.out_file {
-            fs::write(
-                out,
-                RustFmt::default().format_str(stream.to_string()).unwrap(),
-            )
-            .unwrap();
-            quote!()
-        } else {
-            stream
         }
+    }
+
+    fn write_stream_to_file(&self, stream: TokenStream, out_file: impl AsRef<Path>) {
+        let out_file = PathBuf::from(&self.cargo_manifest_dir).join(out_file);
+
+        let new = RustFmt::default()
+            .format_str(stream.to_string())
+            .unwrap()
+            .into_bytes();
+
+        if let Ok(old) = fs::read(&out_file) {
+            if new == old {
+                return;
+            }
+        }
+
+        fs::write(out_file, new).unwrap();
+    }
+
+    pub fn gen_program_file(&self, out: impl AsRef<Path>) {
+        self.write_stream_to_file(self.gen_program_stream(), out)
     }
 
     fn mod_gen<G>(&self, name: &Ident, gen: G, need_types: bool) -> TokenStream

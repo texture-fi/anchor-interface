@@ -20,5 +20,8 @@ solana-program = " 1.10"
 thiserror = "1"
 uint = "0.9"
 
+[build-dependencies]
+anchor-interface-syn = { path = "../../syn" }
+
 [lib]
 crate-type = ["cdylib", "lib"]

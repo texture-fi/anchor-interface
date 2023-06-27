@@ -4,9 +4,7 @@
 #[cfg(not(feature = "gen-file"))]
 anchor_interface_gen::program!(idl = "jupiter.json");
 
-// Or we can generate rust-file and then include or import that (easier to debug)
-#[cfg(feature = "gen-file")]
-anchor_interface_gen::program!(idl = "jupiter.json", out_file = "src/_gen_.rs");
+// Or we can generate rust-file with build script and then include or import that (easier to debug)
 #[cfg(feature = "gen-file")]
 mod _gen_;
 #[cfg(feature = "gen-file")]
