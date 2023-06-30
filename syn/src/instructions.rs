@@ -1,6 +1,6 @@
 use anchor_syn::codegen::program::common::{sighash, SIGHASH_GLOBAL_NAMESPACE};
 use anchor_syn::idl::{IdlAccount, IdlAccountItem, IdlInstruction};
-use heck::{ToSnakeCase, ToTitleCase, ToUpperCamelCase};
+use heck::{ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
@@ -232,18 +232,25 @@ fn acc_docs_gen(accounts: &[IdlAccountItem]) -> TokenStream {
     }
 }
 
-fn acc_name(acc: &IdlAccount) -> TokenStream {
-    let name = format_ident!("{}", acc.name.to_snake_case());
+fn acc_name(acc: &IdlAccount, upper: bool) -> TokenStream {
+    let name = format_ident!(
+        "{}",
+        if upper {
+            acc.name.to_shouty_snake_case()
+        } else {
+            acc.name.to_snake_case()
+        }
+    );
     quote!(#name)
 }
-fn acc_item_name(acc: &IdlAccountItem) -> Vec<TokenStream> {
+fn acc_item_name(acc: &IdlAccountItem, upper: bool) -> Vec<TokenStream> {
     let mut out = Vec::new();
     match acc {
-        IdlAccountItem::IdlAccount(acc) => out.push(acc_name(acc)),
+        IdlAccountItem::IdlAccount(acc) => out.push(acc_name(acc, upper)),
         IdlAccountItem::IdlAccounts(accs) => {
             accs.accounts
                 .iter()
-                .for_each(|acc| out.extend(acc_item_name(acc)));
+                .for_each(|acc| out.extend(acc_item_name(acc, upper)));
         }
     }
     out
@@ -277,7 +284,15 @@ fn ix_builders_and_parsers_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]
                 ix.idl
                     .accounts
                     .iter()
-                    .for_each(|acc| out.extend(acc_item_name(acc)));
+                    .for_each(|acc| out.extend(acc_item_name(acc, false)));
+                out
+            };
+            let upper_accounts = {
+                let mut out = Vec::new();
+                ix.idl
+                    .accounts
+                    .iter()
+                    .for_each(|acc| out.extend(acc_item_name(acc, true)));
                 out
             };
             let accounts_decl = accounts.clone();
@@ -294,6 +309,7 @@ fn ix_builders_and_parsers_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]
             let ix_args = params.clone();
             let account_idxs_name = format_ident!("{}AccountIndexes", name);
             let try_acc_idx = accounts.clone();
+            let try_acc_idx_idx_const = 0..accounts.len();
             let try_acc_idx_idx = 0..accounts.len();
             quote! {
                 #[derive(Debug)]
@@ -342,6 +358,11 @@ fn ix_builders_and_parsers_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]
                 pub struct #account_idxs_name {
                     #(pub #accounts_decl: usize,)*
                     pub trailing_accounts: Vec<usize>,
+                }
+                impl #account_idxs_name {
+                    #(
+                        pub const #upper_accounts: usize = #try_acc_idx_idx_const;
+                    )*
                 }
                 impl<'a> TryFrom<&'a [u8]> for #account_idxs_name {
                     type Error = ::anchor_interface::errors::TryAccountIndexesError;
