@@ -23,7 +23,7 @@ impl Generator {
             } else {
                 (
                     quote!(::borsh::BorshSerialize::serialize(self, writer)),
-                    quote!(::borsh::BorshDeserialize::try_from_slice(&data[8..])),
+                    quote!(::borsh::BorshDeserialize::deserialize(&mut &data[8..])),
                 )
             };
             let impl_serialize_and_deserialize = quote! {
