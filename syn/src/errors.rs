@@ -6,16 +6,10 @@ use crate::{common::item_gen, Generator};
 
 impl Generator {
     pub fn gen_errors(&self) -> TokenStream {
-        let error_type = format!("{}Error", self.idl.name.to_upper_camel_case());
+        let error_type = format!("{}Error", self.idl.metadata.name.to_upper_camel_case());
         let error_name = format_ident!("{}", &error_type);
 
-        let errors = if let Some(errors) = &self.idl.errors {
-            errors
-        } else {
-            return quote!();
-        };
-
-        let errors = errors.iter().map(|err| {
+        let errors = self.idl.errors.iter().map(|err| {
             let name = item_gen(&err.name);
             let code = err.code;
             let msg = if let Some(msg) = &err.msg {
