@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     env, fs,
     path::{Path, PathBuf},
 };
@@ -9,6 +9,7 @@ use common::item_gen;
 use darling::{util::PathList, FromMeta};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
+use syn::Meta;
 use typed_builder::TypedBuilder;
 
 use rust_format::{Formatter, PrettyPlease};
@@ -44,11 +45,34 @@ pub struct GeneratorOptions {
         Some(parse_path_list(list))
     }))]
     pub zero_copy: Option<PathList>,
+
     /// List of `repr(packed)` structs.
     #[builder(default, setter(transform = |list: &[&str]| {
         Some(parse_path_list(list))
     }))]
     pub packed: Option<PathList>,
+
+    /// List of additional attributes.
+    #[darling(multiple)]
+    pub attr: Vec<AttrOptions>,
+}
+
+#[derive(FromMeta, TypedBuilder)]
+pub struct AttrOptions {
+    #[darling(multiple, with = parse_submeta)]
+    pub attr: Vec<Meta>,
+    #[builder(default, setter(transform = |list: &[&str]| {
+        parse_path_list(list)
+    }))]
+    pub names: PathList,
+}
+
+pub fn parse_submeta(meta: &Meta) -> darling::Result<Meta> {
+    match meta {
+        Meta::Path(_) => Err(darling::Error::unsupported_format("path").with_span(meta)),
+        Meta::List(meta_list) => syn::parse2(meta_list.tokens.clone()).map_err(Into::into),
+        Meta::NameValue(_) => Err(darling::Error::unsupported_format("name-value").with_span(meta)),
+    }
 }
 
 pub fn parse_path_list(list: &[&str]) -> PathList {
@@ -71,11 +95,12 @@ pub fn parse_path_list(list: &[&str]) -> PathList {
     PathList::new(list)
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct TypeDefOpts {
     pub with_borsh: bool,
     pub packed: bool,
     pub zero_copy: bool,
+    pub custom_attr: Vec<Meta>,
 }
 
 pub struct Generator {
@@ -100,6 +125,19 @@ impl From<GeneratorOptions> for Generator {
         let manually_with_borsh = pathlist_to_idents(opt.with_borsh.as_ref());
         let manually_zero_copy = pathlist_to_idents(opt.zero_copy.as_ref());
         let manually_packed = pathlist_to_idents(opt.packed.as_ref());
+        let manually_repr = opt.attr.iter().fold(HashMap::new(), |mut out, attr_opts| {
+            let names = pathlist_to_idents(Some(&attr_opts.names));
+            names.iter().for_each(|&name| {
+                attr_opts.attr.iter().for_each(|attr| {
+                    out.entry(name)
+                        .and_modify(|reprs: &mut Vec<Meta>| {
+                            reprs.push(attr.clone());
+                        })
+                        .or_insert(vec![attr.clone()]);
+                })
+            });
+            out
+        });
         idl.types.iter().for_each(|ty| {
             let name = item_gen(&ty.name);
             let zero_copy = match &ty.serialization {
@@ -119,8 +157,9 @@ impl From<GeneratorOptions> for Generator {
                 name.clone(),
                 TypeDefOpts {
                     with_borsh: manually_with_borsh.contains(&name),
-                    packed: manually_zero_copy.contains(&name) || packed,
-                    zero_copy: manually_packed.contains(&name) || zero_copy,
+                    packed: manually_packed.contains(&name) || packed,
+                    zero_copy: manually_zero_copy.contains(&name) || zero_copy,
+                    custom_attr: manually_repr.get(&name).cloned().unwrap_or_default(),
                 },
             );
         });

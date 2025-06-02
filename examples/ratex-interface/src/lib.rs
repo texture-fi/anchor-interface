@@ -11,4 +11,9 @@ anchor_interface_gen::program!(
     out_mod = "_gen_",
     idl = "ratex.json",
     with_borsh(Order),
+    attr(
+        names(MarketStatus, EpochUpdateStatus, MarginType, MarketType),
+        attr(repr(u8)),
+        attr(derive(num_enum::TryFromPrimitive)),
+    ),
 );

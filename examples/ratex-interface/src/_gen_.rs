@@ -18443,6 +18443,8 @@ pub mod types {
     }
     #[derive(Clone, Copy, ::borsh::BorshDeserialize, ::borsh::BorshSerialize)]
     #[derive(Debug)]
+    #[repr(u8)]
+    #[derive(num_enum::TryFromPrimitive)]
     pub enum EpochUpdateStatus {
         Begin,
         Remove,
@@ -18700,6 +18702,8 @@ pub mod types {
     unsafe impl ::bytemuck::Zeroable for MarginPosition {}
     #[derive(Clone, Copy, ::borsh::BorshDeserialize, ::borsh::BorshSerialize)]
     #[derive(Debug)]
+    #[repr(u8)]
+    #[derive(num_enum::TryFromPrimitive)]
     pub enum MarginType {
         NonYieldBearing,
         YieldBearing,
@@ -18712,6 +18716,8 @@ pub mod types {
     }
     #[derive(Clone, Copy, ::borsh::BorshDeserialize, ::borsh::BorshSerialize)]
     #[derive(Debug)]
+    #[repr(u8)]
+    #[derive(num_enum::TryFromPrimitive)]
     pub enum MarketStatus {
         Initialized,
         Active,
@@ -18723,6 +18729,8 @@ pub mod types {
     }
     #[derive(Clone, Copy, ::borsh::BorshDeserialize, ::borsh::BorshSerialize)]
     #[derive(Debug)]
+    #[repr(u8)]
+    #[derive(num_enum::TryFromPrimitive)]
     pub enum MarketType {
         Perp,
         Spot,

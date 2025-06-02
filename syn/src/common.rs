@@ -106,6 +106,10 @@ impl FieldListProperties {
                 vec.push(quote!(#[repr(C)]))
             }
 
+            opts.custom_attr
+                .iter()
+                .for_each(|attr| vec.push(quote!(#[#attr])));
+
             vec
         };
         (derive, attrs)

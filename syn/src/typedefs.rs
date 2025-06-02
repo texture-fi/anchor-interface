@@ -26,7 +26,7 @@ pub fn typedef_gen(
 ) -> (TokenStream, Ident, TypeDefOpts) {
     let docs = docs_gen(&ty.docs);
     let name = item_gen(&ty.name);
-    let opts = opts.get(&name).copied().unwrap_or_default();
+    let opts = opts.get(&name).cloned().unwrap_or_default();
     let derive_debug = if opts.packed {
         // NOTE: pointers to the fields of the boxed structure are not aligned,
         // so they need to be copied to a local variable,
