@@ -12,8 +12,8 @@ gen-file = []
 [dependencies]
 anchor-interface = { path = "../../interface" }
 anchor-interface-gen = { path = "../../generator" }
-borsh = "0.9.3"
-num-derive = "0.3"
+borsh = "1"
+num-derive = "0.4"
 num-traits = "0.2"
 thiserror = "1"
 solana-program = "1.10"
@@ -26,9 +26,6 @@ solana-logger = "1.10"
 solana-program-test = "1.10"
 solana-sdk = "1.10"
 tokio = "1"
-
-[build-dependencies]
-anchor-interface-syn = { path = "../../syn" }
 
 [lib]
 crate-type = ["cdylib", "lib"]

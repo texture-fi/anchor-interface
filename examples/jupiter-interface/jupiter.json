@@ -1,6 +1,9 @@
 {
   "version": "0.1.0",
   "name": "jupiter",
+  "metadata": {
+    "address": "JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB"
+  },
   "instructions": [
     {
       "name": "route",
@@ -2231,7 +2234,7 @@
   ],
   "events": [
     {
-      "name": "Swap",
+      "name": "SwapE",
       "fields": [
         {
           "name": "amm",

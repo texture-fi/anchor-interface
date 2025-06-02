@@ -1,6 +1,6 @@
 [package]
-name = "whirlpool-interface"
-version = "0.0.0"
+name = "ratex-interface"
+version = "1.0.0"
 edition = "2021"
 publish = false
 
@@ -14,9 +14,11 @@ anchor-interface = { path = "../../interface" }
 anchor-interface-gen = { path = "../../generator" }
 borsh = "1"
 bytemuck = { version = "1.7.3", features = ["extern_crate_std", "min_const_generics"] }
+num_enum = "0.7"
 num-derive = "0.4"
 num-traits = "0.2"
-solana-program = " 1.10"
+rust_decimal = "1.33.1"
+solana-program = "1.10"
 thiserror = "1"
 uint = "0.9"
 

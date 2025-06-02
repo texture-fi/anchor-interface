@@ -1,5 +1,4 @@
-use anchor_syn::codegen::program::common::{sighash, SIGHASH_GLOBAL_NAMESPACE};
-use anchor_syn::idl::{IdlAccount, IdlAccountItem, IdlInstruction};
+use anchor_lang_idl::types::{IdlInstruction, IdlInstructionAccount, IdlInstructionAccountItem};
 use heck::{ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
@@ -11,7 +10,7 @@ impl Generator {
     pub fn gen_instructions(&self) -> TokenStream {
         let master_enum_name = item_gen(&format!(
             "{}Instruction",
-            self.idl.name.to_upper_camel_case()
+            self.idl.metadata.name.to_upper_camel_case()
         ));
         let ixs: Vec<_> = self.idl.instructions.iter().map(Instruction::new).collect();
         let master_enum = master_enum_gen(&master_enum_name, &ixs);
@@ -26,7 +25,6 @@ impl Generator {
 struct Instruction<'a> {
     pub idl: &'a IdlInstruction,
     pub ident: Ident,
-    pub sighash: TokenStream,
     pub args: Vec<Field>,
 
     pub borsh_deser_ident: Ident,
@@ -38,14 +36,10 @@ impl<'a> Instruction<'a> {
         Self {
             idl: ix,
             ident,
-            sighash: {
-                let h = sighash(SIGHASH_GLOBAL_NAMESPACE, &ix.name.to_snake_case());
-                quote!([#(#h),*])
-            },
             args: ix
                 .args
                 .iter()
-                .map(|arg| Field::parse(arg, &Default::default()))
+                .map(|arg| Field::named(arg, &Default::default()))
                 .collect(),
             borsh_deser_ident,
         }
@@ -54,7 +48,7 @@ impl<'a> Instruction<'a> {
 
 fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenStream {
     let ixs_decl = ixs.iter().map(|ix| {
-        let docs = if ix.idl.docs.is_some() {
+        let docs = if !ix.idl.docs.is_empty() {
             docs_gen(&ix.idl.docs)
         } else {
             let head = format!(" {}", ix.idl.name.to_title_case());
@@ -76,15 +70,15 @@ fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
         }
     });
 
-    let sighashes_matches = ixs.iter().map(|ix| {
+    let discriminator_matches = ixs.iter().map(|ix| {
         let name = &ix.ident;
         let args = if ix.args.is_empty() {
             quote!()
         } else {
             quote!({ .. })
         };
-        let sighash = &ix.sighash;
-        quote!( Self::#name #args => &#sighash )
+        let discriminator = &ix.idl.discriminator;
+        quote!( Self::#name #args => &[#(#discriminator),*], )
     });
 
     let borsh_serialize_matches = ixs.iter().map(|ix| {
@@ -109,13 +103,10 @@ fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
         quote! {
             struct #helper_name ( #master_enum_name );
             impl ::borsh::de::BorshDeserialize for #helper_name {
-                fn deserialize(
-                    _buf: &mut &[u8],
-                ) -> ::core::result::Result<Self, ::borsh::maybestd::io::Error> {
+                fn deserialize_reader<R: std::io::prelude::Read>(_reader: &mut R) -> std::io::Result<Self> {
                     Ok(Self ( #master_enum_name::#name {
-                        #(#args: ::borsh::BorshDeserialize::deserialize(_buf)?,)*
-                    }))
-                }
+                        #(#args: ::borsh::BorshDeserialize::deserialize_reader(_reader)?,)*
+                    }))}
             }
             impl From<#helper_name> for #master_enum_name {
                 fn from(helper: #helper_name) -> #master_enum_name {
@@ -126,10 +117,10 @@ fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
     });
 
     let unpack_matches = ixs.iter().map(|ix| {
-        let sighash = &ix.sighash;
+        let discriminator = &ix.idl.discriminator;
         let helper_name = &ix.borsh_deser_ident;
-        quote!(#sighash => {
-            #helper_name::try_from_slice(ix_data)?.into()
+        quote!([#(#discriminator),*] => {
+            #helper_name::deserialize(&mut ix_data)?.into()
         })
     });
 
@@ -139,18 +130,15 @@ fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
             #(#ixs_decl),*
         }
         impl #master_enum_name {
-            pub fn sighash(&self) -> &'static [u8; 8] {
+            pub fn discriminator(&self) -> &'static [u8; 8] {
                 match self {
-                    #(#sighashes_matches),*
+                    #(#discriminator_matches)*
                 }
             }
-            pub fn pack(self) -> Vec<u8> {
-                use ::borsh::BorshSerialize;
+            pub fn pack(self) -> Vec<u8> {let mut out = Vec::new();
+                out.extend(self.discriminator());
 
-                let mut out = Vec::new();
-                out.extend(self.sighash());
-
-                let data = self.try_to_vec().unwrap();
+                let data = ::borsh::to_vec(&self).unwrap();
                 out.extend(data);
 
                 out
@@ -158,23 +146,23 @@ fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
             pub fn unpack(data: &[u8]) -> ::std::io::Result<Self> {
                 use ::borsh::BorshDeserialize;
 
-                let (sighash, ix_data) = data.split_at(8);
+                let (discriminator, mut ix_data) = data.split_at(8);
 
-                Ok(match sighash {
+                Ok(match discriminator {
                     #(#unpack_matches)*
                     _ => return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
-                        "invalid sighash",
+                        "invalid discriminator",
                     )),
                 })
             }
         }
 
         impl ::borsh::BorshSerialize for #master_enum_name {
-            fn serialize<W: ::borsh::maybestd::io::Write>(
+            fn serialize<W: ::borsh::io::Write>(
                 &self,
                 writer: &mut W,
-            ) -> ::core::result::Result<(), ::borsh::maybestd::io::Error> {
+            ) -> ::core::result::Result<(), ::borsh::io::Error> {
                 match self {
                     #(#borsh_serialize_matches)*
                 }
@@ -186,29 +174,25 @@ fn master_enum_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]) -> TokenSt
     }
 }
 
-fn acc_docs(acc: &IdlAccount, idx: &mut usize) -> String {
+fn acc_docs(acc: &IdlInstructionAccount, idx: &mut usize) -> String {
     let out = format!(
         " {}. `[{}{}{}]` {}",
         idx,
-        if acc.is_signer { "signer" } else { "" },
-        if acc.is_signer && acc.is_mut {
-            ", "
-        } else {
-            ""
-        },
-        if acc.is_mut { "writable" } else { "" },
+        if acc.signer { "signer" } else { "" },
+        if acc.signer && acc.writable { ", " } else { "" },
+        if acc.writable { "writable" } else { "" },
         acc.name.to_title_case().to_lowercase(),
     );
     *idx += 1;
     out
 }
-fn acc_item_docs(acc: &IdlAccountItem, idx: &mut usize) -> Vec<String> {
+fn acc_item_docs(acc: &IdlInstructionAccountItem, idx: &mut usize) -> Vec<String> {
     let mut out = Vec::new();
     match acc {
-        IdlAccountItem::IdlAccount(acc) => {
+        IdlInstructionAccountItem::Single(acc) => {
             out.push(acc_docs(acc, idx));
         }
-        IdlAccountItem::IdlAccounts(accs) => {
+        IdlInstructionAccountItem::Composite(accs) => {
             accs.accounts.iter().for_each(|acc| {
                 out.extend(acc_item_docs(acc, idx));
             });
@@ -216,7 +200,7 @@ fn acc_item_docs(acc: &IdlAccountItem, idx: &mut usize) -> Vec<String> {
     }
     out
 }
-fn acc_docs_gen(accounts: &[IdlAccountItem]) -> TokenStream {
+fn acc_docs_gen(accounts: &[IdlInstructionAccountItem]) -> TokenStream {
     if accounts.is_empty() {
         return quote!();
     }
@@ -232,7 +216,7 @@ fn acc_docs_gen(accounts: &[IdlAccountItem]) -> TokenStream {
     }
 }
 
-fn acc_name(acc: &IdlAccount, upper: bool) -> TokenStream {
+fn acc_name(acc: &IdlInstructionAccount, upper: bool) -> TokenStream {
     let name = format_ident!(
         "{}",
         if upper {
@@ -243,11 +227,11 @@ fn acc_name(acc: &IdlAccount, upper: bool) -> TokenStream {
     );
     quote!(#name)
 }
-fn acc_item_name(acc: &IdlAccountItem, upper: bool) -> Vec<TokenStream> {
+fn acc_item_name(acc: &IdlInstructionAccountItem, upper: bool) -> Vec<TokenStream> {
     let mut out = Vec::new();
     match acc {
-        IdlAccountItem::IdlAccount(acc) => out.push(acc_name(acc, upper)),
-        IdlAccountItem::IdlAccounts(accs) => {
+        IdlInstructionAccountItem::Single(acc) => out.push(acc_name(acc, upper)),
+        IdlInstructionAccountItem::Composite(accs) => {
             accs.accounts
                 .iter()
                 .for_each(|acc| out.extend(acc_item_name(acc, upper)));
@@ -256,17 +240,17 @@ fn acc_item_name(acc: &IdlAccountItem, upper: bool) -> Vec<TokenStream> {
     out
 }
 
-fn acc_meta(acc: &IdlAccount) -> TokenStream {
+fn acc_meta(acc: &IdlInstructionAccount) -> TokenStream {
     let name = format_ident!("{}", acc.name.to_snake_case());
-    let is_signer = acc.is_signer;
-    let new = format_ident!("{}", if acc.is_mut { "new" } else { "new_readonly" });
-    quote!(AccountMeta::#new(#name, #is_signer))
+    let is_signer = acc.signer;
+    let new = format_ident!("{}", if acc.writable { "new" } else { "new_readonly" });
+    quote!(::solana_program::instruction::AccountMeta::#new(#name, #is_signer))
 }
-fn acc_item_meta(acc: &IdlAccountItem) -> Vec<TokenStream> {
+fn acc_item_meta(acc: &IdlInstructionAccountItem) -> Vec<TokenStream> {
     let mut out = Vec::new();
     match acc {
-        IdlAccountItem::IdlAccount(acc) => out.push(acc_meta(acc)),
-        IdlAccountItem::IdlAccounts(accs) => {
+        IdlInstructionAccountItem::Single(acc) => out.push(acc_meta(acc)),
+        IdlInstructionAccountItem::Composite(accs) => {
             accs.accounts
                 .iter()
                 .for_each(|acc| out.extend(acc_item_meta(acc)));
@@ -279,36 +263,31 @@ fn ix_builders_and_parsers_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]
     ixs.iter()
         .map(|ix| {
             let name = &ix.ident;
-            let accounts = {
-                let mut out = Vec::new();
-                ix.idl
-                    .accounts
-                    .iter()
-                    .for_each(|acc| out.extend(acc_item_name(acc, false)));
-                out
-            };
-            let upper_accounts = {
-                let mut out = Vec::new();
-                ix.idl
-                    .accounts
-                    .iter()
-                    .for_each(|acc| out.extend(acc_item_name(acc, true)));
-                out
-            };
+            let accounts: Vec<TokenStream> = ix
+                .idl
+                .accounts
+                .iter()
+                .flat_map(|acc| acc_item_name(acc, false))
+                .collect();
+            let upper_accounts: Vec<TokenStream> = ix
+                .idl
+                .accounts
+                .iter()
+                .flat_map(|acc| acc_item_name(acc, true))
+                .collect();
             let accounts_decl = accounts.clone();
-            let account_metas = {
-                let mut out = Vec::new();
-                ix.idl
-                    .accounts
-                    .iter()
-                    .for_each(|acc| out.extend(acc_item_meta(acc)));
-                out
-            };
+            let account_metas: Vec<TokenStream> =
+                ix.idl.accounts.iter().flat_map(acc_item_meta).collect();
             let params_decl = ix.args.iter().map(Field::pub_decl_gen);
             let params = ix.args.iter().map(|arg| &arg.ident);
             let ix_args = params.clone();
             let account_idxs_name = format_ident!("{}AccountIndexes", name);
             let try_acc_idx = accounts.clone();
+            let try_acc_idx_iter_mut = if accounts.is_empty() {
+                quote!()
+            } else {
+                quote!(mut)
+            };
             let try_acc_idx_idx_const = 0..accounts.len();
             let try_acc_idx_idx = 0..accounts.len();
             quote! {
@@ -325,8 +304,6 @@ fn ix_builders_and_parsers_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]
                 }
                 impl #name {
                     pub fn into_instruction(self) -> ::solana_program::instruction::Instruction {
-                        use ::solana_program::instruction::{AccountMeta, Instruction};
-
                         let Self {
                             program_id,
                             #(#accounts,)*
@@ -346,7 +323,7 @@ fn ix_builders_and_parsers_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]
                         }
                         .pack();
 
-                        Instruction {
+                        ::solana_program::instruction::Instruction {
                             program_id,
                             data,
                             accounts,
@@ -367,7 +344,7 @@ fn ix_builders_and_parsers_gen(master_enum_name: &Ident, ixs: &[Instruction<'_>]
                 impl<'a> TryFrom<&'a [u8]> for #account_idxs_name {
                     type Error = ::anchor_interface::errors::TryAccountIndexesError;
                     fn try_from(indexes: &'a [u8]) -> Result<Self, Self::Error> {
-                        let mut iter = indexes.iter().map(|idx| (*idx) as usize);
+                        let #try_acc_idx_iter_mut iter = indexes.iter().map(|idx| (*idx) as usize);
                         Ok(Self {
                             #(
                                 #try_acc_idx: iter.next()
