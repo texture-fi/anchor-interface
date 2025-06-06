@@ -21,6 +21,3 @@ rust_decimal = "1.33.1"
 solana-program = "1.10"
 thiserror = "1"
 uint = "0.9"
-
-[lib]
-crate-type = ["cdylib", "lib"]
